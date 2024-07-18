@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/kzinthant-d3v/toll-calculator/types"
@@ -14,9 +13,10 @@ type Dataproducer interface {
 
 type KafkaProducer struct {
 	producer *kafka.Producer
+	topic    *string
 }
 
-func NewKafkaProducer() (*KafkaProducer, error) {
+func NewKafkaProducer(topic *string) (Dataproducer, error) {
 	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": "localhost"})
 	if err != nil {
 		return nil, err
@@ -27,14 +27,14 @@ func NewKafkaProducer() (*KafkaProducer, error) {
 			switch ev := e.(type) {
 			case *kafka.Message:
 				if ev.TopicPartition.Error != nil {
-					fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
+					// fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
 				} else {
-					fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
+					// fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
 				}
 			}
 		}
 	}()
-	return &KafkaProducer{producer: p}, nil
+	return &KafkaProducer{producer: p, topic: topic}, nil
 }
 
 func (p *KafkaProducer) ProduceData(data types.OBUData) error {
@@ -43,7 +43,7 @@ func (p *KafkaProducer) ProduceData(data types.OBUData) error {
 		return err
 	}
 	return p.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &kafkaTopic, Partition: kafka.PartitionAny},
+		TopicPartition: kafka.TopicPartition{Topic: p.topic, Partition: kafka.PartitionAny},
 		Value:          b,
 	}, nil)
 }

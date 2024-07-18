@@ -9,8 +9,6 @@ import (
 	"github.com/kzinthant-d3v/toll-calculator/types"
 )
 
-var kafkaTopic string = "obudata"
-
 func main() {
 
 	recv, err := NewDataReceiver()
@@ -42,10 +40,17 @@ func (dr *DataReceiver) handleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func NewDataReceiver() (*DataReceiver, error) {
-	p, err := NewKafkaProducer()
+	var (
+		p          Dataproducer
+		err        error
+		kafkaTopic = "obudata"
+	)
+
+	p, err = NewKafkaProducer(&kafkaTopic)
 	if err != nil {
 		return nil, err
 	}
+	p = NewLoggingMiddleware(p)
 	return &DataReceiver{
 		msgch:    make(chan types.OBUData, 128),
 		producer: p,

@@ -12,7 +12,7 @@ import (
 
 const wsEndpoint = "ws://localhost:30000/ws"
 
-var sendInterval = time.Second
+var sendInterval = time.Second * 5
 
 func genCoord() float64 {
 	n := float64(rand.Intn(100) + 1)
