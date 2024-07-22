@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/kzinthant-d3v/toll-calculator/invoice/client"
 	"github.com/kzinthant-d3v/toll-calculator/types"
 	"github.com/sirupsen/logrus"
 )
@@ -13,9 +16,10 @@ type KafkaTransport struct {
 	consumer          *kafka.Consumer
 	isRunning         bool
 	calculatorService CalculatorServicer
+	aggregatorClient  client.Client
 }
 
-func NewKafkaTransport(topic string, svc CalculatorServicer) (*KafkaTransport, error) {
+func NewKafkaTransport(topic string, svc CalculatorServicer, aggregatorClient client.Client) (*KafkaTransport, error) {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": "localhost",
 		"group.id":          "myGroup",
@@ -32,7 +36,7 @@ func NewKafkaTransport(topic string, svc CalculatorServicer) (*KafkaTransport, e
 		return nil, err
 	}
 
-	return &KafkaTransport{consumer: c, calculatorService: svc}, nil
+	return &KafkaTransport{consumer: c, calculatorService: svc, aggregatorClient: aggregatorClient}, nil
 }
 
 func (c *KafkaTransport) Start() {
@@ -64,5 +68,14 @@ func (c *KafkaTransport) readMessageLoop() {
 			continue
 		}
 		_ = distance
+		req := &types.AggregateRequest{
+			Value: distance,
+			Unix:  time.Now().UnixNano(),
+			ObuID: int32(data.OBUID),
+		}
+		if err := c.aggregatorClient.Aggregate(context.Background(), req); err != nil {
+			logrus.Errorf("Error aggregating invoice: %v\n", err)
+			continue
+		}
 	}
 }

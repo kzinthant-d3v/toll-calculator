@@ -4,27 +4,78 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 
 	"github.com/kzinthant-d3v/toll-calculator/types"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 func main() {
-	listenPort := flag.String("port", "3000", "port to listen")
+	listenPorthttp := flag.String("httpport", "4000", "port to listen http")
+	listenPortgrpc := flag.String("grpcport", "3001", "port to listen grpc")
 	flag.Parse()
 	var (
 		store = NewMemoryStore()
 		svc   = NewInvoiceAggregator(store)
 	)
+	svc = NewMetricMiddleware(svc)
 	svc = NewLoggingMiddleware(svc)
-	makeHTTPTransport(listenPort, svc)
+	// log.Fatal((listenPortgrpc, svc))
+	go makeGRPCTransport(listenPortgrpc, svc)
+	makeHTTPTransport(listenPorthttp, svc)
+}
+
+func makeGRPCTransport(listenPort *string, svc Aggregator) error {
+	fmt.Println("Starting server on port", *listenPort)
+	//!!tcp should be lowercase
+	ln, err := net.Listen("tcp", ":"+*listenPort)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+	//make a new grpc server
+	server := grpc.NewServer([]grpc.ServerOption{}...)
+	//register the server implementation
+	types.RegisterAggregatorServer(server, NewAggregatorGRPCServer(svc))
+	return server.Serve(ln)
 }
 
 func makeHTTPTransport(listenPort *string, svc Aggregator) {
 	fmt.Println("Starting server on port", *listenPort)
 	http.HandleFunc("/aggregate", handleAggregate(svc))
+	http.HandleFunc("/invoice", handleGetInvoice(svc))
+	http.HandleFunc("/metrics", promhttp.Handler().ServeHTTP)
 	if err := http.ListenAndServe(":"+*listenPort, nil); err != nil {
 		fmt.Println("Error starting server", err)
+	}
+}
+
+func handleGetInvoice(svc Aggregator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("getting invoices")
+		obuID := r.URL.Query().Get("obu_id")
+		fmt.Println("obu_id", obuID)
+		if obuID == "" {
+			http.Error(w, "obu_id is required", http.StatusBadRequest)
+			return
+		}
+		intObuID, err := strconv.Atoi(obuID)
+		if err != nil {
+			http.Error(w, "obu_id should be integer", http.StatusBadRequest)
+			return
+		}
+
+		invoice, err := svc.CalculateInvoice(intObuID)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, invoice)
+
 	}
 }
 

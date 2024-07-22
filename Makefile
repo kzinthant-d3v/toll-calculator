@@ -1,3 +1,6 @@
+gate:
+	@go build -o bin/gate gateway/main.go
+	@./bin/gate
 obu:
 	@go build -o bin/obu obu/main.go
 	@./bin/obu
@@ -14,4 +17,7 @@ invoice:
 	@go build -o bin/invoice ./invoice
 	@./bin/invoice
 
-.PHONY: obu, producer, invoice
+proto:
+	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative types/*.proto
+
+.PHONY: obu producer invoice
