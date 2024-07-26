@@ -2,36 +2,43 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 
+	"github.com/joho/godotenv"
 	"github.com/kzinthant-d3v/toll-calculator/types"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 )
 
 func main() {
-	listenPorthttp := flag.String("httpport", "4000", "port to listen http")
-	listenPortgrpc := flag.String("grpcport", "3001", "port to listen grpc")
-	flag.Parse()
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("Error loading .env file")
+	}
+
 	var (
-		store = NewMemoryStore()
-		svc   = NewInvoiceAggregator(store)
+		store          = NewMemoryStore()
+		svc            = NewInvoiceAggregator(store)
+		listenPorthttp = os.Getenv("AGG_GRPC_ENDPOINT")
+		listenPortgrpc = os.Getenv("AGG_HTTP_ENDPOINT")
 	)
 	svc = NewMetricMiddleware(svc)
 	svc = NewLoggingMiddleware(svc)
 	// log.Fatal((listenPortgrpc, svc))
-	go makeGRPCTransport(listenPortgrpc, svc)
+	go func() {
+		log.Fatal(makeGRPCTransport(listenPortgrpc, svc))
+	}()
 	makeHTTPTransport(listenPorthttp, svc)
 }
 
-func makeGRPCTransport(listenPort *string, svc Aggregator) error {
-	fmt.Println("Starting server on port", *listenPort)
+func makeGRPCTransport(listenPort string, svc Aggregator) error {
+	fmt.Println("Starting server on port", listenPort)
 	//!!tcp should be lowercase
-	ln, err := net.Listen("tcp", ":"+*listenPort)
+	ln, err := net.Listen("tcp", listenPort)
 	if err != nil {
 		return err
 	}
@@ -43,12 +50,12 @@ func makeGRPCTransport(listenPort *string, svc Aggregator) error {
 	return server.Serve(ln)
 }
 
-func makeHTTPTransport(listenPort *string, svc Aggregator) {
-	fmt.Println("Starting server on port", *listenPort)
+func makeHTTPTransport(listenPort string, svc Aggregator) {
+	fmt.Println("Starting server on port", listenPort)
 	http.HandleFunc("/aggregate", handleAggregate(svc))
 	http.HandleFunc("/invoice", handleGetInvoice(svc))
 	http.HandleFunc("/metrics", promhttp.Handler().ServeHTTP)
-	if err := http.ListenAndServe(":"+*listenPort, nil); err != nil {
+	if err := http.ListenAndServe(listenPort, nil); err != nil {
 		fmt.Println("Error starting server", err)
 	}
 }
